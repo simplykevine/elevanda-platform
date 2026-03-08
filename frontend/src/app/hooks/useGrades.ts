@@ -10,8 +10,11 @@ export function useGrades() {
   useEffect(() => {
     gradesService
       .getMyGrades()
-      .then(setGrades)
-      .catch(() => toast.error('Could not load grades.'))
+      .then((data) => setGrades(Array.isArray(data) ? data : []))
+      .catch(() => {
+        toast.error('Could not load grades.');
+        setGrades([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 

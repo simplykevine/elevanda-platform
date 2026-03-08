@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CreditCard, BookOpen, CheckSquare, Calendar } from 'lucide-react';
+import { BookOpen, CheckSquare, Calendar } from 'lucide-react';
 import Header from '../SharedComponents/layout/components/Header';
 import StatCard from '../SharedComponents/dashboard/StatCard';
 import FeeBalanceCard from '../SharedComponents/dashboard/FeeBalanceCard';
@@ -21,24 +21,29 @@ import { useAuthStore } from '../store/auth.store';
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const { account, loading: feesLoading, submitting, deposit, withdraw } = useFees();
-  const { grades, loading: gradesLoading } = useGrades();
+  const { grades, loading: gradesLoading }             = useGrades();
   const { attendanceRate, loading: attendanceLoading } = useAttendance();
-  const { entries, loading: timetableLoading } = useTimetable();
+  const { entries, loading: timetableLoading }         = useTimetable();
 
-  const [depositOpen, setDepositOpen] = useState(false);
+  const [depositOpen, setDepositOpen]   = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [amountError, setAmountError] = useState('');
+  const [amount, setAmount]             = useState('');
+  const [description, setDescription]  = useState('');
+  const [amountError, setAmountError]   = useState('');
 
-  const balance = parseFloat(account?.balance ?? '0');
+  const balance      = parseFloat(account?.balance ?? '0');
   const isLowBalance = balance < 5000;
 
-  const avgGrade = grades.length > 0
-    ? Math.round(grades.reduce((a, g) => a + g.percentage, 0) / grades.length)
+  const safeGrades = Array.isArray(grades) ? grades : [];
+  const avgGrade   = safeGrades.length > 0
+    ? Math.round(safeGrades.reduce((acc, g) => acc + (g.percentage ?? 0), 0) / safeGrades.length)
     : null;
 
-  const resetForm = () => { setAmount(''); setDescription(''); setAmountError(''); };
+  const resetForm = () => {
+    setAmount('');
+    setDescription('');
+    setAmountError('');
+  };
 
   const handleDeposit = async () => {
     const num = parseFloat(amount);
@@ -59,12 +64,11 @@ export default function DashboardPage() {
   return (
     <>
       <Header
-        title={`Good morning, ${user?.first_name}`}
+        title={`Good morning, ${user?.first_name ?? '...'}`}
         subtitle="Here's what's happening today."
       />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Alerts */}
         {!user?.is_verified && (
           <AlertBanner
             message="Your device is pending verification by an administrator. Some features may be restricted until approved."
@@ -78,7 +82,6 @@ export default function DashboardPage() {
           />
         )}
 
-        {/* Fee balance + stats */}
         {feesLoading ? (
           <div className="flex justify-center py-8"><Spinner /></div>
         ) : (
@@ -114,7 +117,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Recent transactions */}
         {account && (
           <div className="max-w-2xl">
             <RecentTransactions transactions={account.recent_transactions} />
@@ -122,7 +124,6 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* Deposit Modal */}
       <Modal
         open={depositOpen}
         onClose={() => { setDepositOpen(false); resetForm(); }}
@@ -147,14 +148,17 @@ export default function DashboardPage() {
             <Button onClick={handleDeposit} loading={submitting} className="flex-1">
               Confirm Payment
             </Button>
-            <Button variant="secondary" onClick={() => { setDepositOpen(false); resetForm(); }} className="flex-1">
+            <Button
+              variant="secondary"
+              onClick={() => { setDepositOpen(false); resetForm(); }}
+              className="flex-1"
+            >
               Cancel
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* Withdraw Modal */}
       <Modal
         open={withdrawOpen}
         onClose={() => { setWithdrawOpen(false); resetForm(); }}
@@ -162,7 +166,10 @@ export default function DashboardPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-500">
-            Current balance: <span className="font-semibold text-slate-900">{formatCurrency(account?.balance ?? '0')}</span>
+            Current balance:{' '}
+            <span className="font-semibold text-slate-900">
+              {formatCurrency(account?.balance ?? '0')}
+            </span>
           </p>
           <Input
             label="Amount (KES)"
@@ -179,10 +186,19 @@ export default function DashboardPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
           <div className="flex gap-3 pt-2">
-            <Button onClick={handleWithdraw} loading={submitting} variant="danger" className="flex-1">
+            <Button
+              onClick={handleWithdraw}
+              loading={submitting}
+              variant="danger"
+              className="flex-1"
+            >
               Submit Request
             </Button>
-            <Button variant="secondary" onClick={() => { setWithdrawOpen(false); resetForm(); }} className="flex-1">
+            <Button
+              variant="secondary"
+              onClick={() => { setWithdrawOpen(false); resetForm(); }}
+              className="flex-1"
+            >
               Cancel
             </Button>
           </div>

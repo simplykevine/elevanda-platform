@@ -12,14 +12,18 @@ export function useTimetable() {
     timetableService
       .getMyTimetable()
       .then((data) => {
-        const sorted = [...data].sort((a, b) => {
+        const safeData = Array.isArray(data) ? data : [];
+        const sorted = [...safeData].sort((a, b) => {
           const dayDiff = getDayOrder(a.day) - getDayOrder(b.day);
           if (dayDiff !== 0) return dayDiff;
           return a.start_time.localeCompare(b.start_time);
         });
         setEntries(sorted);
       })
-      .catch(() => toast.error('Could not load timetable.'))
+      .catch(() => {
+        toast.error('Could not load timetable.');
+        setEntries([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
