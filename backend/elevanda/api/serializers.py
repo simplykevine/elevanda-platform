@@ -9,9 +9,7 @@ from fees.models import FeeAccount, FeeTransaction
 from school.models import StudentProfile, TeacherProfile
 
 
-
 class UserPublicSerializer(serializers.ModelSerializer):
-    """Safe DTO: no password, no sensitive fields exposed to frontend."""
     full_name = serializers.CharField(read_only=True)
 
     class Meta:
@@ -21,16 +19,8 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    """
-    Registration DTO.
-
-    The frontend hashes the password with SHA-512 (128 lowercase hex chars)
-    BEFORE sending it. We validate that the value looks like a valid SHA-512
-    hex digest, then store it directly via Django's password hasher (PBKDF2
-    wraps the hash). No second hashing here.
-    """
-    password   = serializers.CharField(write_only=True)
-    device_id  = serializers.CharField(write_only=True)
+    password    = serializers.CharField(write_only=True)
+    device_id   = serializers.CharField(write_only=True)
     device_name = serializers.CharField(write_only=True, required=False, default='')
 
     class Meta:
@@ -44,25 +34,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_password(self, value):
-        """
-        Ensure the client sent an already-hashed SHA-512 digest.
-        A valid SHA-512 hex string is exactly 128 lowercase hex characters.
-        """
         if len(value) != 128 or not all(c in '0123456789abcdef' for c in value.lower()):
-            raise ValidationError(
-                'Invalid password format. The client must send a SHA-512 hex digest.'
-            )
+            raise ValidationError('Invalid password format. The client must send a SHA-512 hex digest.')
         return value
 
     def create(self, validated_data):
         device_id   = validated_data.pop('device_id')
         device_name = validated_data.pop('device_name', '')
-        password    = validated_data.pop('password')   # already a SHA-512 hex digest
-
-        # create_user calls set_password() internally, which wraps with PBKDF2
+        password    = validated_data.pop('password')
         user = User.objects.create_user(password=password, **validated_data)
-
-        # Register the device as pending admin approval
         DeviceVerification.objects.create(
             user=user,
             device_id=device_id,
@@ -72,24 +52,10 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    """
-    Login DTO.
-
-    The frontend sends the password already SHA-512 hashed (128 hex chars).
-    We must NOT hash it again here — the User.check_password() override
-    detects whether it looks like a pre-hashed value and handles comparison
-    correctly (see users/models.py).
-    """
     email     = serializers.EmailField()
     password  = serializers.CharField(write_only=True)
     device_id = serializers.CharField()
 
-    # ── No validate_password override ──
-    # Hashing here would produce SHA-512(SHA-512(plain)) which never matches
-    # the PBKDF2(SHA-512(plain)) stored at registration time.
-
-
-# ─── Device Verification ───────────��──────────────────────────────────────────
 
 class DeviceVerificationSerializer(serializers.ModelSerializer):
     user = UserPublicSerializer(read_only=True)
@@ -102,8 +68,6 @@ class DeviceVerificationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'user', 'requested_at', 'verified_at']
 
-
-# ─── Academics ────────────────────────────────────────────────────────────────
 
 class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
@@ -120,9 +84,9 @@ class ClassSerializer(serializers.ModelSerializer):
 
 
 class TimetableSerializer(serializers.ModelSerializer):
-    subject_name = serializers.CharField(source='subject.name',       read_only=True)
-    teacher_name = serializers.CharField(source='teacher.full_name',  read_only=True)
-    class_name   = serializers.CharField(source='school_class.name',  read_only=True)
+    subject_name = serializers.CharField(source='subject.name',      read_only=True)
+    teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
+    class_name   = serializers.CharField(source='school_class.name', read_only=True)
 
     class Meta:
         model  = Timetable
@@ -147,8 +111,8 @@ class GradeSerializer(serializers.ModelSerializer):
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source='student.full_name',  read_only=True)
-    class_name   = serializers.CharField(source='school_class.name',  read_only=True)
+    student_name = serializers.CharField(source='student.full_name', read_only=True)
+    class_name   = serializers.CharField(source='school_class.name', read_only=True)
 
     class Meta:
         model  = Attendance
@@ -158,8 +122,6 @@ class AttendanceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'recorded_at']
 
-
-# ─── Fees ─────────────────────────────────────────────────────────────────────
 
 class FeeTransactionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -190,8 +152,6 @@ class FeeAccountSerializer(serializers.ModelSerializer):
         return FeeTransactionSerializer(qs, many=True).data
 
 
-# ─── School Profiles ──────────────────────────────────────────────────────────
-
 class StudentProfileSerializer(serializers.ModelSerializer):
     user       = UserPublicSerializer(read_only=True)
     class_name = serializers.CharField(source='school_class.name', read_only=True)
@@ -208,8 +168,6 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
         model  = TeacherProfile
         fields = ['id', 'user', 'employee_number', 'department', 'qualification', 'joined_at']
 
-
-# ─── Admin Dashboard Stats ────────────────────────────────────────────────────
 
 class DashboardStatsSerializer(serializers.Serializer):
     total_students      = serializers.IntegerField()

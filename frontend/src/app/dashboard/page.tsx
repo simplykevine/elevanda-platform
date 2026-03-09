@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookOpen, CheckSquare, Calendar } from 'lucide-react';
 import Header from '../SharedComponents/layout/components/Header';
 import StatCard from '../SharedComponents/dashboard/StatCard';
@@ -18,8 +18,11 @@ import { useTimetable } from '../hooks/useTimetable';
 import { formatCurrency } from '../utils/format';
 import { useAuthStore } from '../store/auth.store';
 
+import { useAuth } from '../hooks/useAuth';
+
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const { refreshUser } = useAuth();
   const { account, loading: feesLoading, submitting, deposit, withdraw } = useFees();
   const { grades, loading: gradesLoading }             = useGrades();
   const { attendanceRate, loading: attendanceLoading } = useAttendance();
@@ -30,6 +33,10 @@ export default function DashboardPage() {
   const [amount, setAmount]             = useState('');
   const [description, setDescription]  = useState('');
   const [amountError, setAmountError]   = useState('');
+
+  useEffect(() => {
+    refreshUser();
+  }, []);
 
   const balance      = parseFloat(account?.balance ?? '0');
   const isLowBalance = balance < 5000;
@@ -148,11 +155,7 @@ export default function DashboardPage() {
             <Button onClick={handleDeposit} loading={submitting} className="flex-1">
               Confirm Payment
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => { setDepositOpen(false); resetForm(); }}
-              className="flex-1"
-            >
+            <Button variant="secondary" onClick={() => { setDepositOpen(false); resetForm(); }} className="flex-1">
               Cancel
             </Button>
           </div>
@@ -186,19 +189,10 @@ export default function DashboardPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
           <div className="flex gap-3 pt-2">
-            <Button
-              onClick={handleWithdraw}
-              loading={submitting}
-              variant="danger"
-              className="flex-1"
-            >
+            <Button onClick={handleWithdraw} loading={submitting} variant="danger" className="flex-1">
               Submit Request
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => { setWithdrawOpen(false); resetForm(); }}
-              className="flex-1"
-            >
+            <Button variant="secondary" onClick={() => { setWithdrawOpen(false); resetForm(); }} className="flex-1">
               Cancel
             </Button>
           </div>

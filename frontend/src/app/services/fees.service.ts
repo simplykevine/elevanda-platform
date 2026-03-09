@@ -3,8 +3,9 @@ import { FeeAccount, FeeTransaction, PaginatedResponse } from '../utils/types';
 
 export const feesService = {
   async getMyAccount(): Promise<FeeAccount | null> {
-    const { data } = await api.get<PaginatedResponse<FeeAccount>>('/fee-accounts/');
-    return data.results[0] ?? null;
+    const { data } = await api.get<PaginatedResponse<FeeAccount> | FeeAccount[]>('/fee-accounts/');
+    const results = Array.isArray(data) ? data : (data.results ?? []);
+    return results[0] ?? null;
   },
 
   async getAccountById(id: number): Promise<FeeAccount> {

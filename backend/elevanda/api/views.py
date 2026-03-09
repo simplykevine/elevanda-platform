@@ -24,7 +24,6 @@ from .serializers import (
     DashboardStatsSerializer,
 )
 
-# ─── Swagger Documentation Imports ───────────────────────────────────────────
 from drf_spectacular.utils import (
     extend_schema,
     extend_schema_view,
@@ -34,8 +33,6 @@ from drf_spectacular.utils import (
 )
 from drf_spectacular.types import OpenApiTypes
 
-
-# ─── Auth ─────────────────────────────────────────────────────────────────────
 
 @extend_schema(
     tags=['Authentication'],
@@ -92,7 +89,6 @@ class LoginView(APIView):
         if not user.is_active:
             return Response({'detail': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Check device verification (admins bypass)
         if user.role != 'admin':
             device = DeviceVerification.objects.filter(user=user, device_id=device_id).first()
             if not device:
@@ -107,7 +103,6 @@ class LoginView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-        # Issue JWT
         refresh = RefreshToken.for_user(user)
         return Response({
             'access': str(refresh.access_token),
@@ -125,7 +120,7 @@ class LoginView(APIView):
     },
 )
 class LogoutView(APIView):
-    permission_classes = [AllowAny]  # ← CHANGED from IsAuthenticated
+    permission_classes = [AllowAny]
 
     def post(self, request):
         try:
@@ -137,8 +132,6 @@ class LogoutView(APIView):
             pass
         return Response({'message': 'Logged out successfully.'}, status=status.HTTP_200_OK)
 
-
-# ─── Admin: Users & Devices ──────────────────────────────────────────────────
 
 @extend_schema_view(
     list=extend_schema(
@@ -177,7 +170,7 @@ class LogoutView(APIView):
 )
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserPublicSerializer
-    permission_classes = [AllowAny]  # ← CHANGED from IsAuthenticated, IsAdmin
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = User.objects.all()
@@ -188,7 +181,9 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='me')
     def me(self, request):
-        return Response(UserPublicSerializer(request.user).data if request.user.is_authenticated else {'detail': 'Not authenticated'})
+        if request.user.is_authenticated:
+            return Response(UserPublicSerializer(request.user).data)
+        return Response({'detail': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
 
     @action(detail=True, methods=['patch'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
@@ -235,7 +230,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 )
 class DeviceVerificationViewSet(viewsets.ModelViewSet):
     serializer_class = DeviceVerificationSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = DeviceVerification.objects.select_related('user').all()
@@ -264,8 +259,6 @@ class DeviceVerificationViewSet(viewsets.ModelViewSet):
         device.save()
         return Response({'message': 'Device rejected.', 'device': DeviceVerificationSerializer(device).data})
 
-
-# ─── Classes & Timetable ─────────────────────────────────────────────────────
 
 @extend_schema_view(
     list=extend_schema(
@@ -316,7 +309,7 @@ class DeviceVerificationViewSet(viewsets.ModelViewSet):
 class ClassViewSet(viewsets.ModelViewSet):
     queryset = Class.objects.prefetch_related('subjects').all()
     serializer_class = ClassSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     @action(detail=True, methods=['get'], url_path='timetable')
     def timetable(self, request, pk=None):
@@ -334,8 +327,8 @@ class ClassViewSet(viewsets.ModelViewSet):
 @extend_schema_view(
     list=extend_schema(
         tags=['Timetable'],
-        summary='List All Timetable Entries',
-        description='Retrieve all timetable entries.',
+        summary='List Timetable Entries',
+        description='Retrieve timetable entries. Students see only their class. Teachers see only their entries. Admins see all.',
         responses={200: OpenApiResponse(description='List of timetable entries', response=TimetableSerializer(many=True))},
     ),
     retrieve=extend_schema(
@@ -366,18 +359,36 @@ class ClassViewSet(viewsets.ModelViewSet):
     ),
 )
 class TimetableViewSet(viewsets.ModelViewSet):
-    queryset = Timetable.objects.select_related('school_class', 'subject', 'teacher').all()
     serializer_class = TimetableSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
+    def get_queryset(self):
+        qs = Timetable.objects.select_related('school_class', 'subject', 'teacher').all()
+        user = self.request.user
 
-# ─── Grades & Attendance ─────────────────────────────────────────────────────
+        if user.is_authenticated and user.role == 'admin':
+            return qs
+
+        if user.is_authenticated and user.role in ('student', 'parent'):
+            try:
+                profile = StudentProfile.objects.get(user=user)
+                if profile.school_class:
+                    return qs.filter(school_class=profile.school_class)
+            except StudentProfile.DoesNotExist:
+                pass
+            return qs.none()
+
+        if user.is_authenticated and user.role == 'teacher':
+            return qs.filter(teacher=user)
+
+        return qs.none()
+
 
 @extend_schema_view(
     list=extend_schema(
         tags=['Grades'],
         summary='List Grades',
-        description='Retrieve grades.',
+        description='Retrieve grades. Students see only their grades. Parents see their children\'s grades. Teachers see grades they recorded. Admins see all.',
         responses={200: OpenApiResponse(description='List of grades', response=GradeSerializer(many=True))},
     ),
     retrieve=extend_schema(
@@ -409,11 +420,26 @@ class TimetableViewSet(viewsets.ModelViewSet):
 )
 class GradeViewSet(viewsets.ModelViewSet):
     serializer_class = GradeSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = Grade.objects.select_related('student', 'subject', 'teacher').all()
-        return qs
+        user = self.request.user
+
+        if user.is_authenticated and user.role == 'admin':
+            return qs
+
+        if user.is_authenticated and user.role == 'student':
+            return qs.filter(student=user)
+
+        if user.is_authenticated and user.role == 'parent':
+            children_ids = StudentProfile.objects.filter(parent=user).values_list('user_id', flat=True)
+            return qs.filter(student_id__in=children_ids)
+
+        if user.is_authenticated and user.role == 'teacher':
+            return qs.filter(teacher=user)
+
+        return qs.none()
 
     def perform_create(self, serializer):
         serializer.save(teacher=self.request.user if self.request.user.is_authenticated else None)
@@ -423,7 +449,7 @@ class GradeViewSet(viewsets.ModelViewSet):
     list=extend_schema(
         tags=['Attendance'],
         summary='List Attendance Records',
-        description='Retrieve attendance records.',
+        description='Retrieve attendance records. Students see only their records. Parents see their children\'s records. Teachers see records they created. Admins see all.',
         responses={200: OpenApiResponse(description='List of attendance records', response=AttendanceSerializer(many=True))},
     ),
     retrieve=extend_schema(
@@ -455,23 +481,36 @@ class GradeViewSet(viewsets.ModelViewSet):
 )
 class AttendanceViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = Attendance.objects.select_related('student', 'school_class').all()
-        return qs
+        user = self.request.user
+
+        if user.is_authenticated and user.role == 'admin':
+            return qs
+
+        if user.is_authenticated and user.role == 'student':
+            return qs.filter(student=user)
+
+        if user.is_authenticated and user.role == 'parent':
+            children_ids = StudentProfile.objects.filter(parent=user).values_list('user_id', flat=True)
+            return qs.filter(student_id__in=children_ids)
+
+        if user.is_authenticated and user.role == 'teacher':
+            return qs.filter(recorded_by=user)
+
+        return qs.none()
 
     def perform_create(self, serializer):
         serializer.save(recorded_by=self.request.user if self.request.user.is_authenticated else None)
 
 
-# ─── Fees ────────────────────────────────────────────────────────────────────
-
 @extend_schema_view(
     list=extend_schema(
         tags=['Fees'],
         summary='List Fee Accounts',
-        description='Retrieve fee accounts.',
+        description='Retrieve fee accounts. Students see only their account. Parents see their children\'s accounts. Admins see all.',
         responses={200: OpenApiResponse(description='List of fee accounts', response=FeeAccountSerializer(many=True))},
     ),
     retrieve=extend_schema(
@@ -495,10 +534,23 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 )
 class FeeAccountViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = FeeAccountSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return FeeAccount.objects.select_related('student').all()
+        qs = FeeAccount.objects.select_related('student').all()
+        user = self.request.user
+
+        if user.is_authenticated and user.role == 'admin':
+            return qs
+
+        if user.is_authenticated and user.role == 'student':
+            return qs.filter(student=user)
+
+        if user.is_authenticated and user.role == 'parent':
+            children_ids = StudentProfile.objects.filter(parent=user).values_list('user_id', flat=True)
+            return qs.filter(student_id__in=children_ids)
+
+        return qs.none()
 
     @action(detail=True, methods=['post'], url_path='deposit')
     def deposit(self, request, pk=None):
@@ -571,8 +623,6 @@ class FeeAccountViewSet(viewsets.ReadOnlyModelViewSet):
         })
 
 
-# ─── Student & Teacher Profiles ──────────────────────────────────────────────
-
 @extend_schema_view(
     list=extend_schema(
         tags=['Student Profiles'],
@@ -610,7 +660,7 @@ class FeeAccountViewSet(viewsets.ReadOnlyModelViewSet):
 class StudentProfileViewSet(viewsets.ModelViewSet):
     queryset = StudentProfile.objects.select_related('user', 'school_class').all()
     serializer_class = StudentProfileSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
 
 @extend_schema_view(
@@ -650,24 +700,19 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
 class TeacherProfileViewSet(viewsets.ModelViewSet):
     queryset = TeacherProfile.objects.select_related('user').all()
     serializer_class = TeacherProfileSerializer
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
-
-# ─── Dashboard Stats (Admin) ─────────────────────────────────────────────────
 
 @extend_schema(
     tags=['Dashboard'],
     summary='Get Dashboard Statistics',
-    description='Retrieve comprehensive dashboard statistics.',
+    description='Retrieve comprehensive dashboard statistics for admin.',
     responses={
-        200: OpenApiResponse(
-            description='Dashboard statistics',
-            response=DashboardStatsSerializer,
-        ),
+        200: OpenApiResponse(description='Dashboard statistics', response=DashboardStatsSerializer),
     },
 )
 class DashboardStatsView(APIView):
-    permission_classes = [AllowAny]  # ← CHANGED
+    permission_classes = [AllowAny]
 
     def get(self, request):
         total_students = User.objects.filter(role='student').count()

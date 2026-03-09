@@ -10,7 +10,7 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ('role', 'is_verified', 'is_active')
     search_fields = ('email', 'first_name', 'last_name')
     ordering = ('-created_at',)
-    list_editable = ('is_verified',)  # toggle verification directly from the user list
+    list_editable = ('is_verified',)
 
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
@@ -34,6 +34,20 @@ class DeviceVerificationAdmin(admin.ModelAdmin):
     readonly_fields = ('requested_at', 'verified_at', 'verified_by')
     actions = ['approve_devices', 'reject_devices']
 
+    def save_model(self, request, obj, form, change):
+        if change and 'status' in form.changed_data:
+            if obj.status == 'approved':
+                obj.verified_at = timezone.now()
+                obj.verified_by = request.user
+                super().save_model(request, obj, form, change)
+                obj.user.is_verified = True
+                obj.user.save(update_fields=['is_verified'])
+                return
+            elif obj.status == 'rejected':
+                obj.verified_at = timezone.now()
+                obj.verified_by = request.user
+        super().save_model(request, obj, form, change)
+
     @admin.action(description='Approve selected devices')
     def approve_devices(self, request, queryset):
         count = 0
@@ -43,9 +57,8 @@ class DeviceVerificationAdmin(admin.ModelAdmin):
                 device.verified_at = timezone.now()
                 device.verified_by = request.user
                 device.save()
-                # Mark the user as verified
                 device.user.is_verified = True
-                device.user.save()
+                device.user.save(update_fields=['is_verified'])
                 count += 1
         self.message_user(request, f'{count} device(s) approved successfully.')
 

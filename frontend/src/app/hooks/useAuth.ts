@@ -2,10 +2,11 @@ import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../store/auth.store';
 import { authService } from '../services/auth.service';
-import { LoginPayload, RegisterPayload } from '../utils/types';
+import { RegisterPayload } from '../utils/types';
 import { getDeviceId } from '../utils/deviceId';
 import toast from 'react-hot-toast';
 import { hashPassword } from '@/app/utils/hashPassword';
+
 export function useAuth() {
   const router = useRouter();
   const { user, setUser, clearUser } = useAuthStore();
@@ -14,8 +15,7 @@ export function useAuth() {
     async (email: string, password: string) => {
       const device_id = getDeviceId();
       const hashed = await hashPassword(password);
-      const payload: LoginPayload = { email, password: hashed, device_id };
-      const { tokens, user: userData } = await authService.login(payload);
+      const { tokens, user: userData } = await authService.login({ email, password: hashed, device_id });
       authService.setTokens(tokens);
       setUser(userData);
       router.push('/dashboard');
@@ -26,7 +26,7 @@ export function useAuth() {
   const register = useCallback(
     async (payload: Omit<RegisterPayload, 'device_id'>) => {
       const device_id = getDeviceId();
-      const hashed = await hashPassword(payload.password);  // hash before sending
+      const hashed = await hashPassword(payload.password);
       await authService.register({ ...payload, password: hashed, device_id });
       toast.success('Account created. Please wait for admin device verification before logging in.');
       router.push('/login');
@@ -40,5 +40,15 @@ export function useAuth() {
     router.push('/login');
   }, [router, clearUser]);
 
-  return { user, login, register, logout, isAuthenticated: !!user };
+  const refreshUser = useCallback(async () => {
+    try {
+      const freshUser = await authService.fetchMe();
+      setUser(freshUser);
+      return freshUser;
+    } catch {
+      return null;
+    }
+  }, [setUser]);
+
+  return { user, login, register, logout, refreshUser, isAuthenticated: !!user };
 }

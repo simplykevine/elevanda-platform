@@ -9,7 +9,6 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// Attach access token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = Cookies.get('access_token');
   if (token && config.headers) {
@@ -18,7 +17,6 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-// Auto-refresh on 401
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError) => {
@@ -35,7 +33,6 @@ api.interceptors.response.use(
           original.headers!.Authorization = `Bearer ${data.access}`;
           return api(original);
         } catch {
-          // Refresh failed — clear tokens
           Cookies.remove('access_token');
           Cookies.remove('refresh_token');
           if (typeof window !== 'undefined') {
